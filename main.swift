@@ -31,6 +31,7 @@ if (standardDefaults.string(forKey: "reason") == nil) && (arguments.count == 2) 
 }
 
 let context = LAContext()
+context.localizedFallbackTitle = ""
 let semaphore = DispatchSemaphore(value: 0)
 var result = 1
 
