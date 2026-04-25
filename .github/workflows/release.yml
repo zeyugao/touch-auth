@@ -70,3 +70,12 @@ jobs:
             --target "${{ github.sha }}" \
             --title "${{ steps.version.outputs.version }}" \
             --notes "Automated release for version ${{ steps.version.outputs.version }}"
+
+      - name: Trigger Homebrew tap update
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/${{ github.repository }}/dispatches \
+            --method POST \
+            -f event_type=update-homebrew-tap \
+            -f client_payload[version]=${{ steps.version.outputs.version }}

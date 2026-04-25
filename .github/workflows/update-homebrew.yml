@@ -4,6 +4,15 @@ on:
   release:
     types:
       - published
+  repository_dispatch:
+    types:
+      - update-homebrew-tap
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version to sync, for example 1.2.0"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -13,7 +22,7 @@ env:
 
 jobs:
   update-homebrew:
-    if: ${{ !github.event.release.prerelease }}
+    if: ${{ github.event_name != 'release' || !github.event.release.prerelease }}
     runs-on: ubuntu-latest
 
     steps:
@@ -23,13 +32,36 @@ jobs:
       - name: Prepare scripts
         run: chmod +x scripts/*.sh
 
+      - name: Resolve release version
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            version="${{ github.event.release.tag_name }}"
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            version="${{ inputs.version }}"
+          else
+            version="${{ github.event.client_payload.version }}"
+          fi
+
+          version="${version#v}"
+
+          if [[ -z "$version" ]]; then
+            echo "Release version is missing" >&2
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Resolve release asset and checksum
         id: asset
         shell: bash
         run: |
           set -euo pipefail
 
-          asset_url="https://github.com/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }}/touch-auth.tar.gz"
+          asset_url="https://github.com/${{ github.repository }}/releases/download/${{ steps.release.outputs.version }}/touch-auth.tar.gz"
           archive_path="/tmp/touch-auth.tar.gz"
 
           for attempt in {1..10}; do
@@ -60,7 +92,7 @@ jobs:
       - name: Update formula
         env:
           HOMEBREW_FORMULA_PATH: homebrew-touch-auth/Formula/touch-auth.rb
-          RELEASE_VERSION: ${{ github.event.release.tag_name }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
           RELEASE_ASSET_URL: ${{ steps.asset.outputs.url }}
           RELEASE_SHA256: ${{ steps.asset.outputs.sha256 }}
           HOMEPAGE_URL: https://github.com/${{ github.repository }}
@@ -73,12 +105,12 @@ jobs:
           set -euo pipefail
 
           if git diff --quiet; then
-            echo "Formula already matches release ${{ github.event.release.tag_name }}"
+            echo "Formula already matches release ${{ steps.release.outputs.version }}"
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Formula/touch-auth.rb
-          git commit -m "touch-auth ${{ github.event.release.tag_name }}"
+          git commit -m "touch-auth ${{ steps.release.outputs.version }}"
           git push
